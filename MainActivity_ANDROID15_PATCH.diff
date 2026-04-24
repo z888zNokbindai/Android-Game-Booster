@@ -1,0 +1,37 @@
+*** app/src/main/java/com/spse/gameresolutionchanger/MainActivity.java
+@@
+ import android.widget.Toast;
+ 
+ import androidx.appcompat.app.AlertDialog;
+ import androidx.appcompat.app.AppCompatActivity;
+ import androidx.constraintlayout.widget.ConstraintLayout;
+ import androidx.constraintlayout.widget.ConstraintSet;
+ import androidx.core.content.ContextCompat;
++import androidx.core.graphics.Insets;
++import androidx.core.view.ViewCompat;
++import androidx.core.view.WindowInsetsCompat;
+@@
+         setContentView(R.layout.activity_main);
++        applySystemBarInsets(findViewById(R.id.MainActivity));
+         settingsManager = new SettingsManager(this);
+@@
+     }
++
++    private void applySystemBarInsets(View root) {
++        if (root == null) return;
++        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
++            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
++            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
++            return insets;
++        });
++    }
+*** app/src/main/res/layout/activity_main.xml
+@@
+     android:layout_width="match_parent"
+     android:layout_height="match_parent"
++    android:fitsSystemWindows="true"
+*** app/src/main/res/layout/activity_main_options_shown.xml
+@@
+     android:layout_width="match_parent"
+     android:layout_height="match_parent"
++    android:fitsSystemWindows="true"

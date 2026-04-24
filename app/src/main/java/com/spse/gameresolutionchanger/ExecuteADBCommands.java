@@ -2,128 +2,95 @@ package com.spse.gameresolutionchanger;
 
 import android.util.Log;
 
-import java.io.DataInputStream;
+import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.lang.reflect.Array;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
-public class ExecuteADBCommands extends MainActivity
-{
-    public static boolean canRunRootCommands()
-    {
-        boolean retval = false;
-        Process suProcess;
+public final class ExecuteADBCommands {
+    private static final String TAG = "GRS_SHELL";
 
-        try
-        {
+    private ExecuteADBCommands() {
+        // Utility class
+    }
+
+    public static boolean canRunRootCommands() {
+        Process suProcess = null;
+        try {
             suProcess = Runtime.getRuntime().exec("su");
 
-            DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
-            DataInputStream osRes = new DataInputStream(suProcess.getInputStream());
+            try (DataOutputStream os = new DataOutputStream(suProcess.getOutputStream());
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(suProcess.getInputStream()))) {
 
-            if (null != os && null != osRes)
-            {
-                // Getting the id of the current user to check if this is root
                 os.writeBytes("id\n");
-                os.flush();
-
-                String currUid = osRes.readLine();
-
-                boolean exitSu = false;
-                if (null == currUid)
-                {
-                    retval = false;
-                    exitSu = false;
-                    Log.d("ROOT", "Can't get root access or denied by user");
-                }
-                else if (currUid.contains("uid=0"))
-                {
-                    retval = true;
-                    exitSu = true;
-                    Log.d("ROOT", "Root access granted");
-                }
-                else
-                {
-                    retval = false;
-                    exitSu = true;
-                    Log.d("ROOT", "Root access rejected: " + currUid);
-                }
-
-                if (exitSu)
-                {
-                    os.writeBytes("exit\n");
-                    os.flush();
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            // Can't get root !
-            // Probably broken pipe exception on trying to write to output stream (os) after su failed, meaning that the device is not rooted
-
-            retval = false;
-            Log.d("ROOT", "Root access rejected [" + e.getClass().getName() + "] : " + e.getMessage());
-        }
-
-        return retval;
-    }
-
-    public static void execute(String command, boolean isSuperUser){
-        execute(new ArrayList<>(Collections.singletonList(command)), isSuperUser);
-    }
-
-    public static boolean execute(ArrayList<String> commands,boolean isSuperUser)
-    {
-        boolean retval = false;
-
-        try
-        {
-            if (null != commands && commands.size() > 0)
-            {
-                Process process = Runtime.getRuntime().exec(isSuperUser ? "su" : "");
-
-                DataOutputStream os = new DataOutputStream(process.getOutputStream());
-
-                // Execute commands that may require root access
-                for(int i=0; i<commands.size(); i++)
-                {
-                    String currCommand = commands.get(i);
-                    os.writeBytes(currCommand + "\n");
-                    os.flush();
-                }
-
                 os.writeBytes("exit\n");
                 os.flush();
 
-                try
-                {
-                    int processRetval = process.waitFor();
-                    // Root access granted/denied
-                    retval = 255 != processRetval;
-                }
-                catch (Exception ex)
-                {
-                    Log.e("ROOT", "Error executing root action", ex);
-                }
+                String currUid = reader.readLine();
+                boolean rootGranted = currUid != null && currUid.contains("uid=0");
+                Log.d(TAG, rootGranted ? "Root access granted" : "Root access rejected: " + currUid);
+                return rootGranted;
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "Root access unavailable: " + e.getMessage());
+            return false;
+        } finally {
+            if (suProcess != null) {
+                suProcess.destroy();
             }
         }
-        catch (IOException ex)
-        {
-            Log.w("ROOT", "Can't get root access", ex);
-        }
-        catch (SecurityException ex)
-        {
-            Log.w("ROOT", "Can't get root access", ex);
-        }
-        catch (Exception ex)
-        {
-            Log.w("ROOT", "Error executing internal operation", ex);
-        }
-
-        return retval;
     }
 
+    public static boolean execute(String command, boolean isSuperUser) {
+        return execute(new ArrayList<>(Collections.singletonList(command)), isSuperUser);
+    }
+
+    public static boolean execute(List<String> commands, boolean isSuperUser) {
+        if (commands == null || commands.isEmpty()) {
+            return false;
+        }
+
+        Process process = null;
+        try {
+            // Android 15 compatibility: never exec("").
+            // Non-root mode runs commands through app UID shell; WRITE_SECURE_SETTINGS still needs adb grant.
+            process = Runtime.getRuntime().exec(isSuperUser ? "su" : "/system/bin/sh");
+
+            try (DataOutputStream os = new DataOutputStream(process.getOutputStream())) {
+                for (String command : commands) {
+                    if (command == null || command.trim().isEmpty()) {
+                        continue;
+                    }
+                    os.writeBytes(command + "\n");
+                    os.flush();
+                }
+                os.writeBytes("exit\n");
+                os.flush();
+            }
+
+            int exitCode = process.waitFor();
+            boolean success = exitCode == 0;
+            if (!success) {
+                Log.w(TAG, "Command failed, exitCode=" + exitCode + ", root=" + isSuperUser + ", commands=" + commands);
+            }
+            return success;
+        } catch (IOException e) {
+            Log.w(TAG, "Cannot start shell", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            Log.w(TAG, "Shell execution interrupted", e);
+        } catch (SecurityException e) {
+            Log.w(TAG, "Shell execution blocked", e);
+        } catch (Exception e) {
+            Log.w(TAG, "Shell execution error", e);
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
+        return false;
+    }
 }
